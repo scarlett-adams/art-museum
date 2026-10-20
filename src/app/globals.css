@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f1eb;
+  --surface: #fffdf9;
+  --foreground: #1d1b18;
+  --muted: #6d675e;
+  --line: #e0d9cd;
+  --accent: #9a3b26;
+  --correct: #2f7d4f;
+  --close: #c58a14;
+  --far: #b3ada3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #14130f;
+    --surface: #1d1b17;
+    --foreground: #ece7de;
+    --muted: #a39c90;
+    --line: #34312a;
+    --accent: #e48b6e;
+    --correct: #4fae76;
+    --close: #e0b14a;
+    --far: #5f5a51;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-correct: var(--correct);
+  --color-close: var(--close);
+  --color-far: var(--far);
+  --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-fraunces);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@utility eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The century slider. Thumb width is mirrored in CenturyPicker's markers. */
+.century-range {
+  appearance: none;
+  width: 100%;
+  height: 2.75rem;
+  background: transparent;
+  cursor: pointer;
+}
+.century-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.century-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.century-range::-webkit-slider-thumb {
+  appearance: none;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
+  border-radius: 999px;
+  background: var(--foreground);
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--foreground);
+}
+.century-range::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--foreground);
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--foreground);
+}
+.century-range:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
