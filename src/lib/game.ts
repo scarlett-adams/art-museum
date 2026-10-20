@@ -1,15 +1,11 @@
-import type { Direction, Feedback } from "./century";
+import type { Compass, Comparison, Feedback } from "./geo";
 import { MAX_GUESSES, type Answer } from "./puzzle";
 
-export const GAME_KEY = "artle:game";
+export const GAME_KEY = "artle:country-game";
 export const STATS_KEY = "artle:stats";
 export const HELP_KEY = "artle:seen-help";
 
-export type GuessResult = {
-  century: number;
-  feedback: Feedback;
-  direction: Direction;
-};
+export type GuessResult = Comparison & { country: string };
 
 /** The player's progress on one day's puzzle. `answer` is set once it's over. */
 export type SavedGame = {
@@ -57,9 +53,23 @@ export function currentStreak(stats: Stats | null, puzzle: number): number {
 
 const SQUARES: Record<Feedback, string> = { correct: "🟩", close: "🟨", far: "⬜" };
 
+const ARROW_EMOJI: Record<Compass, string> = {
+  N: "⬆️",
+  NE: "↗️",
+  E: "➡️",
+  SE: "↘️",
+  S: "⬇️",
+  SW: "↙️",
+  W: "⬅️",
+  NW: "↖️",
+};
+
+/** A spoiler-free summary: a colored square and an arrow per guess. */
 export function shareText(puzzle: number, guesses: GuessResult[], url: string): string {
   const won = guesses.at(-1)?.feedback === "correct";
   const score = won ? guesses.length : "X";
-  const squares = guesses.map((guess) => SQUARES[guess.feedback]).join("");
-  return `Artle #${puzzle} ${score}/${MAX_GUESSES}\n${squares}\n${url}`;
+  const marks = guesses
+    .map((guess) => SQUARES[guess.feedback] + (guess.direction ? ARROW_EMOJI[guess.direction] : ""))
+    .join(" ");
+  return `Artle #${puzzle} ${score}/${MAX_GUESSES}\n${marks}\n${url}`;
 }

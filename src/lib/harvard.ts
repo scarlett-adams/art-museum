@@ -19,13 +19,13 @@ const FIELDS = [
   "id",
   "title",
   "dated",
-  "datebegin",
-  "dateend",
+  "century",
   "classification",
   "medium",
   "culture",
   "period",
   "people",
+  "places",
   "primaryimageurl",
   "url",
 ];
@@ -53,6 +53,7 @@ export async function getPuzzle(date: string): Promise<Puzzle> {
   const params = new URLSearchParams({
     apikey: apiKey,
     hasimage: "1",
+    place: "any",
     q: "imagepermissionlevel:0",
     classification: CLASSIFICATIONS.join("|"),
     sort: `random:${seed}`,

@@ -12,7 +12,7 @@ export default function Home() {
         <h1 className="font-serif text-5xl font-semibold tracking-tight sm:text-6xl">
           Artle
         </h1>
-        <p className="mt-2 text-muted">One artwork a day. Guess the century it was made in.</p>
+        <p className="mt-2 text-muted">One artwork a day. Guess the country it was made in.</p>
       </header>
 
       <main className="flex-1">

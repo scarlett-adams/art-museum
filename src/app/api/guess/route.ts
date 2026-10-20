@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { compareCenturies, isValidCentury } from "@/lib/century";
+import { countryByCode } from "@/lib/countries";
 import { isPlayableDate, puzzleDate } from "@/lib/dates";
+import { compareCountries } from "@/lib/geo";
 import { getPuzzle } from "@/lib/harvard";
 import { MAX_GUESSES, type Puzzle } from "@/lib/puzzle";
 
@@ -9,10 +10,11 @@ import { MAX_GUESSES, type Puzzle } from "@/lib/puzzle";
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const { date, guess, attempt } = body ?? {};
+  const guessed = countryByCode(guess);
 
   if (
     !isPlayableDate(date, puzzleDate(new Date())) ||
-    !isValidCentury(guess) ||
+    !guessed ||
     !Number.isInteger(attempt) ||
     attempt < 1 ||
     attempt > MAX_GUESSES
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = compareCenturies(guess, puzzle.answer.century);
+  const result = compareCountries(guessed, countryByCode(puzzle.answer.country)!);
   const finished = result.feedback === "correct" || attempt === MAX_GUESSES;
   return NextResponse.json({
     ...result,

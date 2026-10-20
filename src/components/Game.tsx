@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { centuryLabel, centuryYears, type Direction, type Feedback } from "@/lib/century";
+import { countryByCode, flag } from "@/lib/countries";
 import {
   GAME_KEY,
   HELP_KEY,
@@ -11,9 +11,10 @@ import {
   type SavedGame,
   type Stats,
 } from "@/lib/game";
+import { ARROWS, COMPASS_NAMES, type Comparison } from "@/lib/geo";
 import { MAX_GUESSES, type Answer, type Hint, type PublicPuzzle } from "@/lib/puzzle";
 import { readStored, useStored, writeStored } from "@/lib/storage";
-import CenturyPicker from "./CenturyPicker";
+import CountryPicker from "./CountryPicker";
 import { FEEDBACK_COLOR } from "./feedback";
 import HowToPlay from "./HowToPlay";
 import Result from "./Result";
@@ -24,7 +25,6 @@ export default function Game({ puzzle }: { puzzle: PublicPuzzle }) {
   const saved = useStored<SavedGame>(GAME_KEY);
   const seenHelp = useStored<boolean>(HELP_KEY);
   const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
-  const [selected, setSelected] = useState(15);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -40,8 +40,8 @@ export default function Game({ puzzle }: { puzzle: PublicPuzzle }) {
     writeStored(HELP_KEY, true);
   }
 
-  async function submitGuess() {
-    if (pending || answer) return;
+  async function submitGuess(country: string): Promise<boolean> {
+    if (pending || answer) return false;
     setPending(true);
     setError(null);
     try {
@@ -50,31 +50,28 @@ export default function Game({ puzzle }: { puzzle: PublicPuzzle }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           date: puzzle.date,
-          guess: selected,
+          guess: country,
           attempt: guesses.length + 1,
         }),
       });
       if (!response.ok) throw new Error(`Guess failed with ${response.status}`);
-      const result = (await response.json()) as {
-        feedback: Feedback;
-        direction: Direction;
+      const { answer: revealed, ...result } = (await response.json()) as Comparison & {
         answer?: Answer;
       };
 
       writeStored(GAME_KEY, {
         date: puzzle.date,
-        guesses: [
-          ...guesses,
-          { century: selected, feedback: result.feedback, direction: result.direction },
-        ],
-        answer: result.answer,
+        guesses: [...guesses, { ...result, country }],
+        answer: revealed,
       } satisfies SavedGame);
-      if (result.answer) {
+      if (revealed) {
         const won = result.feedback === "correct";
         writeStored(STATS_KEY, recordResult(readStored<Stats>(STATS_KEY), puzzle.number, won));
       }
+      return true;
     } catch {
       setError("Couldn't check that guess. Please try again.");
+      return false;
     } finally {
       setPending(false);
     }
@@ -110,9 +107,7 @@ export default function Game({ puzzle }: { puzzle: PublicPuzzle }) {
           {answer ? (
             <Result puzzle={puzzle} guesses={guesses} answer={answer} />
           ) : (
-            <CenturyPicker
-              value={selected}
-              onChange={setSelected}
+            <CountryPicker
               guesses={guesses}
               onSubmit={submitGuess}
               pending={pending}
@@ -181,22 +176,32 @@ function GuessList({ guesses }: { guesses: GuessResult[] }) {
           return (
             <li
               key={i}
-              className="flex h-11 items-center gap-3 rounded border border-line bg-surface px-3 text-sm"
+              className="flex h-11 items-center gap-2 rounded border border-line bg-surface px-3 text-sm"
             >
               <span aria-hidden className={`size-3 shrink-0 rounded-sm ${FEEDBACK_COLOR[guess.feedback]}`} />
-              <span className="font-medium">{centuryLabel(guess.century)}</span>
-              <span className="hidden text-muted sm:inline">{centuryYears(guess.century)}</span>
-              <span className="ml-auto text-right">{feedbackText(guess)}</span>
+              <span aria-hidden className="shrink-0">{flag(guess.country)}</span>
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {countryByCode(guess.country)?.name ?? guess.country}
+              </span>
+              {guess.direction ? (
+                <>
+                  <span className="shrink-0 tabular-nums">
+                    {guess.distanceKm.toLocaleString("en-US")} km
+                  </span>
+                  <span className="w-11 shrink-0 text-right">
+                    <span aria-hidden>
+                      {ARROWS[guess.direction]} {guess.direction}
+                    </span>
+                    <span className="sr-only">away, to the {COMPASS_NAMES[guess.direction]}</span>
+                  </span>
+                </>
+              ) : (
+                <span className="shrink-0 font-medium text-correct">Correct!</span>
+              )}
             </li>
           );
         })}
       </ol>
     </section>
   );
-}
-
-function feedbackText({ feedback, direction }: GuessResult): string {
-  if (feedback === "correct") return "Correct!";
-  const hint = direction === "later" ? "Later →" : "← Earlier";
-  return feedback === "close" ? `Close · ${hint}` : hint;
 }

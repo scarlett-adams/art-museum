@@ -1,20 +1,20 @@
-import { MAX_CENTURY, MIN_CENTURY, centuryOfRange } from "./century";
+import { findCountry, type Country } from "./countries";
 import { puzzleNumber } from "./dates";
 
-export const MAX_GUESSES = 5;
+export const MAX_GUESSES = 6;
 
 /** The fields Artle requests from the Harvard Art Museums object endpoint. */
 export type HarvardObject = {
   id: number;
   title?: string | null;
   dated?: string | null;
-  datebegin?: number | null;
-  dateend?: number | null;
+  century?: string | null;
   classification?: string | null;
   medium?: string | null;
   culture?: string | null;
   period?: string | null;
   people?: { name?: string | null; role?: string | null }[] | null;
+  places?: { displayname?: string | null; type?: string | null }[] | null;
   primaryimageurl?: string | null;
   url?: string | null;
 };
@@ -31,7 +31,8 @@ export type PublicPuzzle = {
 
 /** Revealed once the game is over. */
 export type Answer = {
-  century: number;
+  country: string;
+  place: string;
   title: string;
   dated: string | null;
   artist: string | null;
@@ -42,8 +43,6 @@ export type Answer = {
 export type Puzzle = PublicPuzzle & { answer: Answer };
 
 const UNKNOWN = /unknown|unidentified|anonymous/i;
-// Hints that mention a date or century would give the answer away.
-const DATE_WORDS = /\d|centur|millenni|\b(BCE?|CE|AD|B\.C\.|A\.D\.)\b/i;
 
 function clean(value: string | null | undefined): string | null {
   const text = value?.trim();
@@ -58,32 +57,44 @@ function artistOf(object: HarvardObject): string | null {
   return null;
 }
 
+/**
+ * The country a Harvard place name is in. Place names list the hierarchy
+ * from the top down, like "Europe, France, Paris", so the first part that's
+ * a known country wins. Returns the place reworded as "Paris, France".
+ */
+export function countryOfPlace(displayname: string): { country: Country; place: string } | null {
+  const parts = displayname.split(",").map((part) => part.trim()).filter(Boolean);
+  for (let i = 0; i < parts.length; i++) {
+    const country = findCountry(parts[i]);
+    if (country) return { country, place: parts.slice(i).reverse().join(", ") };
+  }
+  return null;
+}
+
+/** Where the object was made, or null if that isn't a known country. */
+export function creationPlace(object: HarvardObject): { country: Country; place: string } | null {
+  for (const place of object.places ?? []) {
+    if (place.type !== "Creation Place" || !place.displayname) continue;
+    const found = countryOfPlace(place.displayname);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** Clues revealed one at a time after each wrong guess, weakest first. */
 export function buildHints(object: HarvardObject): Hint[] {
   const candidates: [string, string | null][] = [
     ["Type", clean(object.classification)],
     ["Medium", clean(object.medium)],
-    ["Culture", clean(object.culture)],
+    ["Date", clean(object.dated) ?? clean(object.century)],
     ["Artist", artistOf(object)],
+    ["Culture", clean(object.culture)],
     ["Period", clean(object.period)],
   ];
   return candidates
-    .filter((c): c is [string, string] => c[1] !== null && !DATE_WORDS.test(c[1]))
+    .filter((c): c is [string, string] => c[1] !== null)
     .map(([label, value]) => ({ label, value }))
     .slice(0, MAX_GUESSES - 1);
-}
-
-/** The object's century, or null if it can't be used as a puzzle. */
-export function playableCentury(object: HarvardObject): number | null {
-  const { datebegin, dateend } = object;
-  if (!object.primaryimageurl || !clean(object.title)) return null;
-  if (typeof datebegin !== "number" || typeof dateend !== "number") return null;
-  if (datebegin === 0 && dateend === 0) return null; // undated
-  const century = centuryOfRange(datebegin, dateend);
-  if (century === null || century < MIN_CENTURY || century > MAX_CENTURY) {
-    return null;
-  }
-  return century;
 }
 
 function hash(n: number): number {
@@ -96,28 +107,29 @@ function hash(n: number): number {
 /**
  * Picks the day's artwork from a random sample of the collection.
  *
- * The collection is mostly 19th- and 20th-century prints and photographs, so
- * a purely random pick would almost always be one of those. Instead, a
- * century is picked evenly from those in the sample, then the first artwork
- * from that century.
+ * Most of the collection was made in the United States and western Europe,
+ * so a purely random pick would almost always be from one of a few
+ * countries. Instead, a country is picked evenly from those in the sample,
+ * then the first artwork made there.
  */
 export function buildPuzzle(
   date: string,
   objects: HarvardObject[],
   seed: number,
 ): Puzzle | null {
-  const byCentury = new Map<number, HarvardObject>();
+  const byCountry = new Map<string, { object: HarvardObject; place: string }>();
   for (const object of objects) {
-    const century = playableCentury(object);
-    if (century !== null && !byCentury.has(century)) {
-      byCentury.set(century, object);
+    if (!object.primaryimageurl || !clean(object.title)) continue;
+    const made = creationPlace(object);
+    if (made && !byCountry.has(made.country.code)) {
+      byCountry.set(made.country.code, { object, place: made.place });
     }
   }
-  const centuries = [...byCentury.keys()].sort((a, b) => a - b);
-  if (centuries.length === 0) return null;
+  const codes = [...byCountry.keys()].sort();
+  if (codes.length === 0) return null;
 
-  const century = centuries[hash(seed) % centuries.length];
-  const object = byCentury.get(century)!;
+  const country = codes[hash(seed) % codes.length];
+  const { object, place } = byCountry.get(country)!;
   const imageUrl = new URL(object.primaryimageurl!);
   imageUrl.searchParams.set("width", "1200");
   imageUrl.searchParams.set("height", "1200");
@@ -128,7 +140,8 @@ export function buildPuzzle(
     imageUrl: imageUrl.toString(),
     hints: buildHints(object),
     answer: {
-      century,
+      country,
+      place,
       title: clean(object.title)!,
       dated: clean(object.dated),
       artist: artistOf(object),

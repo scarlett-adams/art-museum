@@ -13,9 +13,9 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Artle: guess the century",
+  title: "Artle: guess where art was made",
   description:
-    "A daily art guessing game. Each day, one artwork from the Harvard Art Museums. Guess the century it was made in.",
+    "A daily art guessing game. Each day, one artwork from the Harvard Art Museums. Guess the country it was made in.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

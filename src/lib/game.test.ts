@@ -34,26 +34,27 @@ describe("currentStreak", () => {
 });
 
 describe("shareText", () => {
-  it("summarizes a win", () => {
+  it("summarizes a win without giving away the answer", () => {
     expect(
       shareText(
         3,
         [
-          { century: 12, feedback: "far", direction: "later" },
-          { century: 16, feedback: "close", direction: "later" },
-          { century: 17, feedback: "correct", direction: null },
+          { country: "BR", feedback: "far", distanceKm: 9000, direction: "NE" },
+          { country: "DE", feedback: "close", distanceKm: 600, direction: "SW" },
+          { country: "FR", feedback: "correct", distanceKm: 0, direction: null },
         ],
         "https://artle.example",
       ),
-    ).toBe("Artle #3 3/5\n⬜🟨🟩\nhttps://artle.example");
+    ).toBe("Artle #3 3/6\n⬜↗️ 🟨↙️ 🟩\nhttps://artle.example");
   });
 
   it("marks a loss with an X", () => {
-    const guesses = Array.from({ length: 5 }, () => ({
-      century: 1,
+    const guesses = Array.from({ length: 6 }, () => ({
+      country: "BR",
       feedback: "far" as const,
-      direction: "later" as const,
+      distanceKm: 9000,
+      direction: "E" as const,
     }));
-    expect(shareText(3, guesses, "u")).toBe("Artle #3 X/5\n⬜⬜⬜⬜⬜\nu");
+    expect(shareText(3, guesses, "u")).toBe("Artle #3 X/6\n⬜➡️ ⬜➡️ ⬜➡️ ⬜➡️ ⬜➡️ ⬜➡️\nu");
   });
 });

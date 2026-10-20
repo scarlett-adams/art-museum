@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { CLOSE_KM } from "@/lib/geo";
 import { MAX_GUESSES } from "@/lib/puzzle";
 
 export default function HowToPlay({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -27,19 +28,21 @@ export default function HowToPlay({ open, onClose }: { open: boolean; onClose: (
         </h2>
         <ul className="mt-4 flex list-disc flex-col gap-3 pl-5 text-sm leading-relaxed">
           <li>
-            Each day Artle shows one artwork from the Harvard Art Museums. Guess the century it was
+            Each day Artle shows one artwork from the Harvard Art Museums. Guess the country it was
             made in.
           </li>
           <li>
-            You get {MAX_GUESSES} guesses. After each one you&apos;ll learn whether the artwork is
-            earlier or later.
+            You get {MAX_GUESSES} guesses. After each one you&apos;ll see how far away the right
+            country is and which direction to go, like &ldquo;1,200 km ↗ NE&rdquo;.
           </li>
           <li>
             <Swatch className="bg-correct" label="Green" /> is correct,{" "}
-            <Swatch className="bg-close" label="Yellow" /> is one century off, and{" "}
-            <Swatch className="bg-far" label="Gray" /> is further away.
+            <Swatch className="bg-close" label="Yellow" /> is within{" "}
+            {CLOSE_KM.toLocaleString("en-US")} km, and <Swatch className="bg-far" label="Gray" /> is
+            further away.
           </li>
-          <li>Every wrong guess reveals a clue, like the medium or the culture it came from.</li>
+          <li>Every wrong guess reveals a clue, like the medium, the date or the artist.</li>
+          <li>Countries use today&apos;s borders. Distances are measured between their centers.</li>
           <li>A new artwork appears every day at midnight Eastern Time.</li>
         </ul>
         <button

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { centuryLabel, centuryYears } from "@/lib/century";
+import { countryByCode, flag } from "@/lib/countries";
 import { puzzleEndsAt } from "@/lib/dates";
 import { STATS_KEY, currentStreak, shareText, type GuessResult, type Stats } from "@/lib/game";
 import { MAX_GUESSES, type Answer, type PublicPuzzle } from "@/lib/puzzle";
@@ -17,6 +17,7 @@ export default function Result({ puzzle, guesses, answer }: Props) {
   const stats = useStored<Stats>(STATS_KEY);
   const [shareStatus, setShareStatus] = useState<"copied" | "failed" | null>(null);
   const won = guesses.at(-1)?.feedback === "correct";
+  const country = countryByCode(answer.country)?.name ?? answer.country;
 
   async function share() {
     try {
@@ -42,9 +43,10 @@ export default function Result({ puzzle, guesses, answer }: Props) {
         {won ? `Solved in ${guesses.length} of ${MAX_GUESSES}` : "Out of guesses"}
       </p>
       <h2 id="result-heading" className="mt-2 font-serif text-3xl font-medium">
-        {centuryLabel(answer.century)}
+        <span aria-hidden>{flag(answer.country)} </span>
+        {country}
       </h2>
-      <p className="text-sm text-muted">{centuryYears(answer.century)}</p>
+      {answer.place !== country && <p className="text-sm text-muted">Made in {answer.place}</p>}
 
       <div className="mt-4 border-t border-line pt-4">
         <p className="font-serif text-xl italic">{answer.title}</p>
