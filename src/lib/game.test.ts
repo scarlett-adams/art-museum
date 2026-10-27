@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { currentStreak, recordResult, shareText } from "./game";
+import { currentStreak, recordResult, shareText, type GuessResult } from "./game";
+import type { PublicPuzzle } from "./puzzle";
 
 describe("recordResult", () => {
   it("counts wins and streaks", () => {
@@ -34,27 +35,35 @@ describe("currentStreak", () => {
 });
 
 describe("shareText", () => {
-  it("summarizes a win without giving away the answer", () => {
-    expect(
-      shareText(
-        3,
-        [
-          { country: "BR", feedback: "far", distanceKm: 9000, direction: "NE" },
-          { country: "DE", feedback: "close", distanceKm: 600, direction: "SW" },
-          { country: "FR", feedback: "correct", distanceKm: 0, direction: null },
-        ],
-        "https://artle.example",
-      ),
-    ).toBe("Artle #3 3/6\n⬜↗️ 🟨↙️ 🟩\nhttps://artle.example");
+  const daily: PublicPuzzle = {
+    kind: "daily",
+    id: "2026-10-22",
+    number: 3,
+    imageUrl: "",
+    focus: { x: 50, y: 50 },
+    clues: { date: null, medium: null },
+  };
+  const guesses: GuessResult[] = [
+    { country: "BR", feedback: "far", distanceKm: 9000, direction: "NE" },
+    { country: "DE", feedback: "close", distanceKm: 600, direction: "SW" },
+    { country: "FR", feedback: "correct", distanceKm: 0, direction: null },
+  ];
+
+  it("summarizes a daily win without giving away the answer", () => {
+    expect(shareText(daily, guesses, "https://artle.example")).toBe(
+      "Artle #3 3/6\n⬜↗️ 🟨↙️ 🟩\nhttps://artle.example",
+    );
   });
 
   it("marks a loss with an X", () => {
-    const guesses = Array.from({ length: 6 }, () => ({
-      country: "BR",
-      feedback: "far" as const,
-      distanceKm: 9000,
-      direction: "E" as const,
-    }));
-    expect(shareText(3, guesses, "u")).toBe("Artle #3 X/6\n⬜➡️ ⬜➡️ ⬜➡️ ⬜➡️ ⬜➡️ ⬜➡️\nu");
+    const lost = Array.from({ length: 6 }, () => guesses[0]);
+    expect(shareText(daily, lost, "u")).toBe("Artle #3 X/6\n⬜↗️ ⬜↗️ ⬜↗️ ⬜↗️ ⬜↗️ ⬜↗️\nu");
+  });
+
+  it("links to the same artwork for unlimited rounds", () => {
+    const round: PublicPuzzle = { ...daily, kind: "round", id: "2bm", number: null };
+    expect(shareText(round, guesses, "https://artle.example")).toBe(
+      "Artle Unlimited 3/6\n⬜↗️ 🟨↙️ 🟩\nCan you guess where this was made? https://artle.example/unlimited/2bm",
+    );
   });
 });

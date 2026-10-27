@@ -3,8 +3,15 @@
 A daily art guessing game. Each day Artle shows one artwork from the
 [Harvard Art Museums](https://harvardartmuseums.org) collection, and you get
 six tries to guess the country it was made in. After each guess you see how
-far away the right country is and which way to go (like "1,200 km ↗ NE"),
-and each wrong guess reveals a clue.
+far away the right country is and which way to go (like "1,200 km ↗ NE").
+
+The artwork starts zoomed in and in black and white. Each wrong guess
+reveals more: it zooms out, then shows the color, then the date and finally
+the medium.
+
+After the daily puzzle you can keep playing **unlimited** rounds of random
+artworks. Each round has its own link, like `/unlimited/2bm`, so you can send
+a friend the same artwork.
 
 Built with Next.js and the [Harvard Art Museums API](https://github.com/harvardartmuseums/api-docs).
 
@@ -17,6 +24,14 @@ Built with Next.js and the [Harvard Art Museums API](https://github.com/harvarda
   be matched are skipped. A country is then picked evenly from those in the
   sample, since a purely random pick would almost always be American or
   western European. See `src/lib/puzzle.ts`.
+- **Unlimited rounds.** `/unlimited` picks a random artwork and redirects to
+  its round page. Rounds come from 100 fixed samples of the collection, and a
+  round id like `2bm` packs the sample number and the artwork's position in
+  it, so anyone with the link gets the same artwork without the link giving
+  it away. See `src/app/unlimited/`.
+- **Clues.** The zoom and black-and-white views are done with CSS on the
+  same image. The medium clue drops ware names and later sentences, which
+  often say where the piece was made (`mediumClue` in `src/lib/puzzle.ts`).
 - **Distances and directions.** Each country has a point near its middle,
   from [Natural Earth](https://www.naturalearthdata.com) (public domain).
   Distance is measured over the Earth's surface; direction is the compass
@@ -26,10 +41,12 @@ Built with Next.js and the [Harvard Art Museums API](https://github.com/harvarda
   but not the answer: guesses are checked by `src/app/api/guess/route.ts`,
   which only reveals the artwork once the game is over.
 - **Staying under the rate limit.** API keys allow 2,500 requests a day.
-  Each day's puzzle is cached with `"use cache: remote"`, so the API is called
-  about once a day however many people play.
-- **Saving progress.** Your current game and stats (streak, win rate) are
-  kept in your browser's `localStorage`.
+  Each sample is cached with `"use cache: remote"`, and there are only about
+  100 of them in use (today's puzzle plus the unlimited samples), so the API
+  is called a handful of times a day however many people play.
+- **Saving progress.** Your current daily game, your current unlimited round
+  and your daily stats (streak, win rate) are kept in your browser's
+  `localStorage`. Unlimited rounds don't count toward stats.
 
 A new puzzle starts every day at midnight Eastern Time.
 
@@ -78,12 +95,14 @@ loaded. The reason will be in the project's **Logs** tab on Vercel.
 ```
 src/
   app/
-    page.tsx              the page; loads today's puzzle on the server
+    page.tsx              the daily puzzle
+    unlimited/route.ts    starts a random unlimited round
+    unlimited/[round]/    an unlimited round's page
     api/guess/route.ts    checks a guess and reveals the answer at the end
   components/             the game UI (client components)
   lib/
     harvard.ts            Harvard Art Museums API client (server only)
-    puzzle.ts             picks the day's artwork and builds the clues
+    puzzle.ts             picks artworks, builds clues, round ids
     countries.ts          countries, their other names, and search
     geo.ts                distances and compass directions
     dates.ts              puzzle dates and numbering (Eastern Time)

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { countryByCode, flag } from "@/lib/countries";
 import { puzzleEndsAt } from "@/lib/dates";
 import { STATS_KEY, currentStreak, shareText, type GuessResult, type Stats } from "@/lib/game";
 import { MAX_GUESSES, type Answer, type PublicPuzzle } from "@/lib/puzzle";
 import { useStored } from "@/lib/storage";
+import NewRoundLink from "./NewRoundLink";
+import { useCopy } from "./useCopy";
 
 type Props = {
   puzzle: PublicPuzzle;
@@ -14,22 +16,9 @@ type Props = {
 };
 
 export default function Result({ puzzle, guesses, answer }: Props) {
-  const stats = useStored<Stats>(STATS_KEY);
-  const [shareStatus, setShareStatus] = useState<"copied" | "failed" | null>(null);
+  const [shareStatus, copy] = useCopy();
   const won = guesses.at(-1)?.feedback === "correct";
   const country = countryByCode(answer.country)?.name ?? answer.country;
-
-  async function share() {
-    try {
-      await navigator.clipboard.writeText(
-        shareText(puzzle.number, guesses, window.location.origin),
-      );
-      setShareStatus("copied");
-    } catch {
-      setShareStatus("failed");
-    }
-    setTimeout(() => setShareStatus(null), 2500);
-  }
 
   const details = [
     ["Artist", answer.artist],
@@ -70,31 +59,59 @@ export default function Result({ puzzle, guesses, answer }: Props) {
         )}
       </div>
 
-      <dl className="mt-4 grid grid-cols-4 border-t border-line pt-4 text-center">
-        <Stat label="Played" value={stats?.played ?? 0} />
-        <Stat
-          label="Win %"
-          value={stats?.played ? Math.round((stats.wins / stats.played) * 100) : 0}
-        />
-        <Stat label="Streak" value={currentStreak(stats, puzzle.number)} />
-        <Stat label="Best" value={stats?.maxStreak ?? 0} />
-      </dl>
+      {puzzle.kind === "daily" && <DailyStats puzzle={puzzle.number!} />}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={share}
-          className="h-11 rounded bg-foreground px-5 font-medium text-background hover:opacity-90"
+          onClick={() => copy(shareText(puzzle, guesses, window.location.origin))}
+          className={puzzle.kind === "daily" ? PRIMARY : SECONDARY}
         >
           {shareStatus === "copied"
             ? "Copied to clipboard"
             : shareStatus === "failed"
               ? "Couldn't copy"
-              : "Share result"}
+              : puzzle.kind === "daily"
+                ? "Share result"
+                : "Challenge a friend"}
         </button>
-        <Countdown endsAt={puzzleEndsAt(puzzle.date).getTime()} />
+        {puzzle.kind === "daily" ? (
+          <div className="ml-auto">
+            <Countdown endsAt={puzzleEndsAt(puzzle.id).getTime()} />
+          </div>
+        ) : (
+          <NewRoundLink className={`${PRIMARY} ml-auto`}>Next artwork →</NewRoundLink>
+        )}
       </div>
+      {puzzle.kind === "daily" && (
+        <p className="mt-4 border-t border-line pt-4 text-sm text-muted">
+          Want more?{" "}
+          <NewRoundLink className="text-accent underline underline-offset-2">
+            Play unlimited rounds →
+          </NewRoundLink>
+        </p>
+      )}
     </section>
+  );
+}
+
+const PRIMARY =
+  "inline-flex h-11 items-center rounded bg-foreground px-5 font-medium text-background hover:opacity-90";
+const SECONDARY =
+  "inline-flex h-11 items-center rounded border border-line px-5 font-medium hover:bg-background";
+
+function DailyStats({ puzzle }: { puzzle: number }) {
+  const stats = useStored<Stats>(STATS_KEY);
+  return (
+    <dl className="mt-4 grid grid-cols-4 border-t border-line pt-4 text-center">
+      <Stat label="Played" value={stats?.played ?? 0} />
+      <Stat
+        label="Win %"
+        value={stats?.played ? Math.round((stats.wins / stats.played) * 100) : 0}
+      />
+      <Stat label="Streak" value={currentStreak(stats, puzzle)} />
+      <Stat label="Best" value={stats?.maxStreak ?? 0} />
+    </dl>
   );
 }
 

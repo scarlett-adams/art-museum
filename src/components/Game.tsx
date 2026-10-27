@@ -3,36 +3,45 @@
 import { useState, useSyncExternalStore } from "react";
 import { countryByCode, flag } from "@/lib/countries";
 import {
-  GAME_KEY,
+  GAME_KEYS,
   HELP_KEY,
   STATS_KEY,
   recordResult,
+  roundUrl,
   type GuessResult,
   type SavedGame,
   type Stats,
 } from "@/lib/game";
 import { ARROWS, COMPASS_NAMES, type Comparison } from "@/lib/geo";
-import { MAX_GUESSES, type Answer, type Hint, type PublicPuzzle } from "@/lib/puzzle";
+import { MAX_GUESSES, type Answer, type Clues, type PublicPuzzle } from "@/lib/puzzle";
 import { readStored, useStored, writeStored } from "@/lib/storage";
 import CountryPicker from "./CountryPicker";
 import { FEEDBACK_COLOR } from "./feedback";
 import HowToPlay from "./HowToPlay";
 import Result from "./Result";
+import { useCopy } from "./useCopy";
 
 const subscribeNothing = () => () => {};
 
+// The artwork starts zoomed in and in black and white. Wrong guesses zoom
+// out, then add color, then reveal the date and the medium.
+const ZOOMS = [3, 1.8];
+const COLOR_AFTER = 3;
+const CLUE_COUNT = MAX_GUESSES - 1;
+
 export default function Game({ puzzle }: { puzzle: PublicPuzzle }) {
-  const saved = useStored<SavedGame>(GAME_KEY);
+  const saved = useStored<SavedGame>(GAME_KEYS[puzzle.kind]);
   const seenHelp = useStored<boolean>(HELP_KEY);
   const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [linkStatus, copyLink] = useCopy();
 
-  const game: SavedGame =
-    saved?.date === puzzle.date ? saved : { date: puzzle.date, guesses: [] };
+  const game: SavedGame = saved?.id === puzzle.id ? saved : { id: puzzle.id, guesses: [] };
   const { guesses, answer } = game;
-  const wrongGuesses = guesses.filter((g) => g.feedback !== "correct").length;
+  // Each wrong guess reveals another clue, and everything shows at the end.
+  const revealed = answer ? CLUE_COUNT : guesses.filter((g) => g.feedback !== "correct").length;
   const showHelp = helpOpen || (hydrated && !seenHelp && guesses.length === 0);
 
   function closeHelp() {
@@ -49,24 +58,25 @@ export default function Game({ puzzle }: { puzzle: PublicPuzzle }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: puzzle.date,
+          kind: puzzle.kind,
+          id: puzzle.id,
           guess: country,
           attempt: guesses.length + 1,
         }),
       });
       if (!response.ok) throw new Error(`Guess failed with ${response.status}`);
-      const { answer: revealed, ...result } = (await response.json()) as Comparison & {
+      const { answer: revealedAnswer, ...result } = (await response.json()) as Comparison & {
         answer?: Answer;
       };
 
-      writeStored(GAME_KEY, {
-        date: puzzle.date,
+      writeStored(GAME_KEYS[puzzle.kind], {
+        id: puzzle.id,
         guesses: [...guesses, { ...result, country }],
-        answer: revealed,
+        answer: revealedAnswer,
       } satisfies SavedGame);
-      if (revealed) {
+      if (revealedAnswer && puzzle.kind === "daily") {
         const won = result.feedback === "correct";
-        writeStored(STATS_KEY, recordResult(readStored<Stats>(STATS_KEY), puzzle.number, won));
+        writeStored(STATS_KEY, recordResult(readStored<Stats>(STATS_KEY), puzzle.number!, won));
       }
       return true;
     } catch {
@@ -79,31 +89,41 @@ export default function Game({ puzzle }: { puzzle: PublicPuzzle }) {
 
   return (
     <>
-      <div className="mb-5 flex items-center justify-between border-y border-line py-2 text-sm text-muted">
+      <div className="mb-5 flex items-center justify-between gap-2 border-y border-line py-2 text-sm text-muted">
         <span>
-          No. {puzzle.number} · {formatDate(puzzle.date)}
+          {puzzle.kind === "daily"
+            ? `No. ${puzzle.number} · ${formatDate(puzzle.id)}`
+            : "Unlimited round"}
         </span>
-        <button
-          type="button"
-          onClick={() => setHelpOpen(true)}
-          className="rounded px-2 py-1 hover:bg-surface hover:text-foreground"
-        >
-          How to play
-        </button>
+        <div className="flex items-center">
+          {puzzle.kind === "round" && (
+            <button
+              type="button"
+              onClick={() => copyLink(roundUrl(puzzle, window.location.origin))}
+              className="rounded px-2 py-1 hover:bg-surface hover:text-foreground"
+            >
+              {linkStatus === "copied"
+                ? "Link copied"
+                : linkStatus === "failed"
+                  ? "Couldn't copy"
+                  : "Share artwork"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            className="rounded px-2 py-1 hover:bg-surface hover:text-foreground"
+          >
+            How to play
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] md:items-start">
-        <figure className="rounded-sm bg-surface p-3 shadow-[0_1px_2px_rgb(0_0_0/0.06),0_12px_32px_rgb(0_0_0/0.08)] ring-1 ring-line sm:p-5 md:sticky md:top-6">
-          {/* eslint-disable-next-line @next/next/no-img-element -- the museum's image server already resizes it */}
-          <img
-            src={puzzle.imageUrl}
-            alt={`Artle No. ${puzzle.number}: today's mystery artwork`}
-            className="mx-auto max-h-[60vh] w-auto max-w-full object-contain"
-          />
-        </figure>
+        <Artwork puzzle={puzzle} revealed={revealed} />
 
         <div className="flex flex-col gap-6">
-          <Clues hints={puzzle.hints} revealed={answer ? puzzle.hints.length : wrongGuesses} />
+          <ClueList clues={puzzle.clues} revealed={revealed} />
           {answer ? (
             <Result puzzle={puzzle} guesses={guesses} answer={answer} />
           ) : (
@@ -132,21 +152,62 @@ function formatDate(date: string): string {
   });
 }
 
-function Clues({ hints, revealed }: { hints: Hint[]; revealed: number }) {
-  if (hints.length === 0) return null;
+function Artwork({ puzzle, revealed }: { puzzle: PublicPuzzle; revealed: number }) {
+  const zoom = ZOOMS[revealed] ?? 1;
+  const gray = revealed < COLOR_AFTER;
+  const caption =
+    zoom > 1 && gray ? "Zoomed in, in black and white" : gray ? "In black and white" : null;
+
+  return (
+    <figure className="rounded-sm bg-surface p-3 shadow-[0_1px_2px_rgb(0_0_0/0.06),0_12px_32px_rgb(0_0_0/0.08)] ring-1 ring-line sm:p-5 md:sticky md:top-6">
+      <div className="mx-auto w-fit max-w-full overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element -- the museum's image server already resizes it */}
+        <img
+          src={puzzle.imageUrl}
+          alt={
+            puzzle.kind === "daily"
+              ? `Artle No. ${puzzle.number}: today's mystery artwork`
+              : "The mystery artwork"
+          }
+          className="block max-h-[60vh] w-auto max-w-full transition-[transform,filter] duration-700 ease-out"
+          style={{
+            transform: `scale(${zoom})`,
+            transformOrigin: `${puzzle.focus.x}% ${puzzle.focus.y}%`,
+            filter: gray ? "grayscale(1)" : undefined,
+          }}
+        />
+      </div>
+      {caption && <figcaption className="mt-3 text-center text-xs text-muted">{caption}</figcaption>}
+    </figure>
+  );
+}
+
+function ClueList({ clues, revealed }: { clues: Clues; revealed: number }) {
+  // The image clues have no text: they show up in the picture itself.
+  const rows: [label: string, value: string | null][] = [
+    ["Zoom out", null],
+    ["Whole artwork", null],
+    ["Color", null],
+    ["Date", clues.date ?? "Not recorded"],
+    ["Medium", clues.medium ?? "Not recorded"],
+  ];
   return (
     <section aria-labelledby="clues-heading">
       <h2 id="clues-heading" className="eyebrow">
         Clues
       </h2>
       <ul className="mt-2 divide-y divide-line border-y border-line">
-        {hints.map((hint, i) => (
-          <li key={hint.label} className="flex gap-3 py-2 text-sm">
-            <span className="w-16 shrink-0 text-muted">{hint.label}</span>
-            {i < revealed ? (
-              <span>{hint.value}</span>
+        {rows.map(([label, value], i) => (
+          <li key={label} className="flex gap-3 py-2 text-sm">
+            <span className="w-28 shrink-0 text-muted">{label}</span>
+            {i >= revealed ? (
+              <span className="text-muted italic">After guess {i + 1}</span>
+            ) : value ? (
+              <span>{value}</span>
             ) : (
-              <span className="text-muted italic">Revealed after guess {i + 1}</span>
+              <span className="text-correct">
+                ✓<span className="sr-only">Shown</span>
+              </span>
             )}
           </li>
         ))}

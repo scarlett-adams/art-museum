@@ -1,5 +1,4 @@
 import { findCountry, type Country } from "./countries";
-import { puzzleNumber } from "./dates";
 
 export const MAX_GUESSES = 6;
 
@@ -9,25 +8,19 @@ export type HarvardObject = {
   title?: string | null;
   dated?: string | null;
   century?: string | null;
-  classification?: string | null;
   medium?: string | null;
   culture?: string | null;
-  period?: string | null;
   people?: { name?: string | null; role?: string | null }[] | null;
   places?: { displayname?: string | null; type?: string | null }[] | null;
   primaryimageurl?: string | null;
   url?: string | null;
 };
 
-export type Hint = { label: string; value: string };
+/** Where the zoomed-in first view is centered, in percent of the image. */
+export type Focus = { x: number; y: number };
 
-/** What the player sees while guessing. Must not reveal the answer. */
-export type PublicPuzzle = {
-  date: string;
-  number: number;
-  imageUrl: string;
-  hints: Hint[];
-};
+/** Text clues, revealed after the image ones. */
+export type Clues = { date: string | null; medium: string | null };
 
 /** Revealed once the game is over. */
 export type Answer = {
@@ -38,6 +31,28 @@ export type Answer = {
   artist: string | null;
   culture: string | null;
   url: string | null;
+};
+
+/** A playable artwork, before it's made into a daily puzzle or a round. */
+export type Artwork = {
+  imageUrl: string;
+  focus: Focus;
+  clues: Clues;
+  answer: Answer;
+};
+
+export type PuzzleKind = "daily" | "round";
+
+/** What the player sees while guessing. Must not reveal the answer. */
+export type PublicPuzzle = {
+  kind: PuzzleKind;
+  /** A daily puzzle's date (YYYY-MM-DD), or an unlimited round's id. */
+  id: string;
+  /** Daily puzzles are numbered from launch day. Rounds aren't. */
+  number: number | null;
+  imageUrl: string;
+  focus: Focus;
+  clues: Clues;
 };
 
 export type Puzzle = PublicPuzzle & { answer: Answer };
@@ -55,6 +70,13 @@ function artistOf(object: HarvardObject): string | null {
     if (person.role === "Artist" && name) return name;
   }
   return null;
+}
+
+function hash(n: number): number {
+  let x = n | 0;
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  return (x ^ (x >>> 16)) >>> 0;
 }
 
 /**
@@ -81,76 +103,93 @@ export function creationPlace(object: HarvardObject): { country: Country; place:
   return null;
 }
 
-/** Clues revealed one at a time after each wrong guess, weakest first. */
-export function buildHints(object: HarvardObject): Hint[] {
-  const candidates: [string, string | null][] = [
-    ["Type", clean(object.classification)],
-    ["Medium", clean(object.medium)],
-    ["Date", clean(object.dated) ?? clean(object.century)],
-    ["Artist", artistOf(object)],
-    ["Culture", clean(object.culture)],
-    ["Period", clean(object.period)],
-  ];
-  return candidates
-    .filter((c): c is [string, string] => c[1] !== null)
-    .map(([label, value]) => ({ label, value }))
-    .slice(0, MAX_GUESSES - 1);
+/**
+ * Just the materials. Museums often lead with a ware name and follow with
+ * where it was made, which would give the answer away:
+ * "Yue ware: light gray stoneware… From the Yue kilns at Shanglinhu,
+ * Zhejiang province." becomes "light gray stoneware…".
+ */
+export function mediumClue(medium: string | null | undefined): string | null {
+  let text = clean(medium);
+  if (!text) return null;
+  const colon = text.indexOf(":");
+  if (colon !== -1) text = text.slice(colon + 1);
+  text = text.split(/\.\s/)[0].trim().replace(/\.$/, "");
+  return text || null;
 }
 
-function hash(n: number): number {
-  let x = n | 0;
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
-  return (x ^ (x >>> 16)) >>> 0;
+/** Artworks that can be played, in the order the API returned them. */
+export function playableArtworks(objects: HarvardObject[]): Artwork[] {
+  const artworks: Artwork[] = [];
+  for (const object of objects) {
+    const title = clean(object.title);
+    const made = creationPlace(object);
+    if (!object.primaryimageurl || !title || !made) continue;
+
+    const imageUrl = new URL(object.primaryimageurl);
+    imageUrl.searchParams.set("width", "1200");
+    imageUrl.searchParams.set("height", "1200");
+    const h = hash(object.id);
+
+    artworks.push({
+      imageUrl: imageUrl.toString(),
+      // Somewhere near the middle, where the subject usually is.
+      focus: { x: 30 + (h % 41), y: 30 + ((h >>> 8) % 41) },
+      clues: {
+        date: clean(object.dated) ?? clean(object.century),
+        medium: mediumClue(object.medium),
+      },
+      answer: {
+        country: made.country.code,
+        place: made.place,
+        title,
+        dated: clean(object.dated),
+        artist: artistOf(object),
+        culture: clean(object.culture),
+        url: object.url ?? null,
+      },
+    });
+  }
+  return artworks;
 }
 
 /**
- * Picks the day's artwork from a random sample of the collection.
- *
- * Most of the collection was made in the United States and western Europe,
- * so a purely random pick would almost always be from one of a few
- * countries. Instead, a country is picked evenly from those in the sample,
- * then the first artwork made there.
+ * Picks a country evenly from those in the sample, then one of its
+ * artworks, and returns that artwork's index. Most of the collection was made
+ * in the United States and western Europe, so picking an artwork directly
+ * would almost always land on one of a few countries.
  */
-export function buildPuzzle(
-  date: string,
-  objects: HarvardObject[],
-  seed: number,
-): Puzzle | null {
-  const byCountry = new Map<string, { object: HarvardObject; place: string }>();
-  for (const object of objects) {
-    if (!object.primaryimageurl || !clean(object.title)) continue;
-    const made = creationPlace(object);
-    if (made && !byCountry.has(made.country.code)) {
-      byCountry.set(made.country.code, { object, place: made.place });
-    }
-  }
-  const codes = [...byCountry.keys()].sort();
-  if (codes.length === 0) return null;
-
-  const country = codes[hash(seed) % codes.length];
-  const { object, place } = byCountry.get(country)!;
-  const imageUrl = new URL(object.primaryimageurl!);
-  imageUrl.searchParams.set("width", "1200");
-  imageUrl.searchParams.set("height", "1200");
-
-  return {
-    date,
-    number: puzzleNumber(date),
-    imageUrl: imageUrl.toString(),
-    hints: buildHints(object),
-    answer: {
-      country,
-      place,
-      title: clean(object.title)!,
-      dated: clean(object.dated),
-      artist: artistOf(object),
-      culture: clean(object.culture),
-      url: object.url ?? null,
-    },
-  };
+export function pickArtwork(artworks: Artwork[], countrySeed: number, artworkSeed: number): number {
+  const countries = [...new Set(artworks.map((a) => a.answer.country))].sort();
+  const country = countries[countrySeed % countries.length];
+  const matching = artworks.flatMap((a, i) => (a.answer.country === country ? [i] : []));
+  return matching[artworkSeed % matching.length];
 }
 
-export function toPublicPuzzle({ date, number, imageUrl, hints }: Puzzle): PublicPuzzle {
-  return { date, number, imageUrl, hints };
+/** The index of a day's artwork, given the seed used to sample for that day. */
+export function dailyArtwork(artworks: Artwork[], seed: number): number {
+  return pickArtwork(artworks, hash(seed), 0);
+}
+
+/** Unlimited rounds are drawn from this many cached samples of the collection. */
+export const ROUND_POOLS = 100;
+
+/**
+ * A round id packs the sample number and the artwork's index into a short
+ * base-36 string, like "2bm", so it can be shared without revealing which
+ * artwork it is.
+ */
+export function roundId(pool: number, index: number): string {
+  return (pool * 1000 + index).toString(36);
+}
+
+export function parseRoundId(id: unknown): { pool: number; index: number } | null {
+  if (typeof id !== "string" || !/^[0-9a-z]{1,5}$/.test(id)) return null;
+  const n = parseInt(id, 36);
+  const pool = Math.floor(n / 1000);
+  return pool >= 1 && pool <= ROUND_POOLS ? { pool, index: n % 1000 } : null;
+}
+
+export function toPublicPuzzle({ kind, id, number, imageUrl, focus, clues }: Puzzle): PublicPuzzle {
+  return { kind, id, number, imageUrl, focus, clues };
 }

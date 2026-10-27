@@ -1,15 +1,20 @@
 import type { Compass, Comparison, Feedback } from "./geo";
-import { MAX_GUESSES, type Answer } from "./puzzle";
+import { MAX_GUESSES, type Answer, type PublicPuzzle, type PuzzleKind } from "./puzzle";
 
-export const GAME_KEY = "artle:country-game";
+/** Where the current daily puzzle and the current unlimited round are saved. */
+export const GAME_KEYS: Record<PuzzleKind, string> = {
+  daily: "artle:daily-game",
+  round: "artle:round-game",
+};
+/** Stats only count daily puzzles. */
 export const STATS_KEY = "artle:stats";
 export const HELP_KEY = "artle:seen-help";
 
 export type GuessResult = Comparison & { country: string };
 
-/** The player's progress on one day's puzzle. `answer` is set once it's over. */
+/** The player's progress on one puzzle. `answer` is set once it's over. */
 export type SavedGame = {
-  date: string;
+  id: string;
   guesses: GuessResult[];
   answer?: Answer;
 };
@@ -64,12 +69,21 @@ const ARROW_EMOJI: Record<Compass, string> = {
   NW: "↖️",
 };
 
-/** A spoiler-free summary: a colored square and an arrow per guess. */
-export function shareText(puzzle: number, guesses: GuessResult[], url: string): string {
+/**
+ * A spoiler-free summary: a colored square and an arrow per guess. Rounds
+ * link to the same artwork, so a friend can try it.
+ */
+export function shareText(puzzle: PublicPuzzle, guesses: GuessResult[], origin: string): string {
   const won = guesses.at(-1)?.feedback === "correct";
-  const score = won ? guesses.length : "X";
+  const score = `${won ? guesses.length : "X"}/${MAX_GUESSES}`;
   const marks = guesses
     .map((guess) => SQUARES[guess.feedback] + (guess.direction ? ARROW_EMOJI[guess.direction] : ""))
     .join(" ");
-  return `Artle #${puzzle} ${score}/${MAX_GUESSES}\n${marks}\n${url}`;
+  return puzzle.kind === "daily"
+    ? `Artle #${puzzle.number} ${score}\n${marks}\n${origin}`
+    : `Artle Unlimited ${score}\n${marks}\nCan you guess where this was made? ${roundUrl(puzzle, origin)}`;
+}
+
+export function roundUrl(puzzle: PublicPuzzle, origin: string): string {
+  return `${origin}/unlimited/${puzzle.id}`;
 }

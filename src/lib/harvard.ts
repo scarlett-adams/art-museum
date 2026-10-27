@@ -1,6 +1,17 @@
 import "server-only";
 import { cacheLife } from "next/cache";
-import { buildPuzzle, type HarvardObject, type Puzzle } from "./puzzle";
+import { puzzleNumber } from "./dates";
+import {
+  ROUND_POOLS,
+  dailyArtwork,
+  parseRoundId,
+  pickArtwork,
+  playableArtworks,
+  roundId,
+  type Artwork,
+  type HarvardObject,
+  type Puzzle,
+} from "./puzzle";
 
 const OBJECT_API = "https://api.harvardartmuseums.org/object";
 
@@ -20,10 +31,8 @@ const FIELDS = [
   "title",
   "dated",
   "century",
-  "classification",
   "medium",
   "culture",
-  "period",
   "people",
   "places",
   "primaryimageurl",
@@ -31,14 +40,15 @@ const FIELDS = [
 ];
 
 /**
- * Loads the puzzle for a date (YYYY-MM-DD).
+ * The playable artworks in a random sample of 100 from the collection. The
+ * API's random sort is seeded, so a seed always gives the same sample.
  *
- * The API key only lives on the server, and each date's puzzle is cached in
- * a cache shared by every server instance, so the API is called about once a
- * day no matter how many people play. That keeps Artle well under the API's
- * limit of 2,500 requests a day.
+ * The API key only lives on the server, and samples are cached in a cache
+ * shared by every server instance. There are only ever about 100 seeds in
+ * use (one a day for the daily puzzle, plus the unlimited pools), which keeps
+ * Artle well under the API's limit of 2,500 requests a day.
  */
-export async function getPuzzle(date: string): Promise<Puzzle> {
+async function getArtworks(seed: number): Promise<Artwork[]> {
   "use cache: remote";
   cacheLife("max");
 
@@ -47,9 +57,6 @@ export async function getPuzzle(date: string): Promise<Puzzle> {
     throw new Error("HARVARD_API_KEY is not set. See README.md.");
   }
 
-  // Seeding the API's random sort with the date gives everyone the same
-  // "random" sample, and so the same artwork, on a given day.
-  const seed = Number(date.replaceAll("-", ""));
   const params = new URLSearchParams({
     apikey: apiKey,
     hasimage: "1",
@@ -67,7 +74,31 @@ export async function getPuzzle(date: string): Promise<Puzzle> {
   }
   const data = (await response.json()) as { records?: HarvardObject[] };
 
-  const puzzle = buildPuzzle(date, data.records ?? [], seed);
-  if (!puzzle) throw new Error(`No playable artwork found for ${date}`);
-  return puzzle;
+  const artworks = playableArtworks(data.records ?? []);
+  if (artworks.length === 0) throw new Error(`No playable artworks for seed ${seed}`);
+  return artworks;
+}
+
+/** The puzzle for a date (YYYY-MM-DD). Everyone gets the same one. */
+export async function getDailyPuzzle(date: string): Promise<Puzzle> {
+  const seed = Number(date.replaceAll("-", ""));
+  const artworks = await getArtworks(seed);
+  const artwork = artworks[dailyArtwork(artworks, seed)];
+  return { kind: "daily", id: date, number: puzzleNumber(date), ...artwork };
+}
+
+/** An unlimited round, or null if there's no such round. */
+export async function getRound(id: string): Promise<Puzzle | null> {
+  const parsed = parseRoundId(id);
+  if (!parsed) return null;
+  const artwork = (await getArtworks(parsed.pool))[parsed.index];
+  return artwork ? { kind: "round", id, number: null, ...artwork } : null;
+}
+
+/** Picks a random artwork for a new unlimited round. */
+export async function newRoundId(): Promise<string> {
+  const random = () => Math.floor(Math.random() * 2 ** 31);
+  const pool = 1 + (random() % ROUND_POOLS);
+  const artworks = await getArtworks(pool);
+  return roundId(pool, pickArtwork(artworks, random(), random()));
 }

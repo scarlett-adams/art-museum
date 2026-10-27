@@ -41,9 +41,15 @@ export default function HowToPlay({ open, onClose }: { open: boolean; onClose: (
             {CLOSE_KM.toLocaleString("en-US")} km, and <Swatch className="bg-far" label="Gray" /> is
             further away.
           </li>
-          <li>Every wrong guess reveals a clue, like the medium, the date or the artist.</li>
+          <li>
+            The artwork starts zoomed in and in black and white. Each wrong guess reveals more: it
+            zooms out, then shows the color, then the date and the medium.
+          </li>
           <li>Countries use today&apos;s borders. Distances are measured between their centers.</li>
-          <li>A new artwork appears every day at midnight Eastern Time.</li>
+          <li>
+            A new daily artwork appears at midnight Eastern Time. Want more? Play unlimited rounds,
+            and send a friend the link to try the same artwork.
+          </li>
         </ul>
         <button
           type="button"

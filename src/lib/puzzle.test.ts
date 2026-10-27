@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildHints,
-  buildPuzzle,
+  ROUND_POOLS,
   countryOfPlace,
   creationPlace,
+  dailyArtwork,
+  mediumClue,
+  parseRoundId,
+  pickArtwork,
+  playableArtworks,
+  roundId,
   toPublicPuzzle,
   type HarvardObject,
 } from "./puzzle";
@@ -14,10 +19,8 @@ function object(overrides: Partial<HarvardObject> = {}): HarvardObject {
     title: "Test Object",
     dated: "1650s",
     century: "17th century",
-    classification: "Paintings",
     medium: "Oil on canvas",
     culture: "Dutch",
-    period: null,
     people: [{ name: "Test Artist", role: "Artist" }],
     places: [{ displayname: "Europe, Netherlands, Amsterdam", type: "Creation Place" }],
     primaryimageurl: "https://nrs.harvard.edu/urn-3:HUAM:TEST1",
@@ -67,66 +70,28 @@ describe("creationPlace", () => {
   });
 });
 
-describe("buildHints", () => {
-  it("lists clues weakest first, one per wrong guess", () => {
-    expect(buildHints(object({ period: "Dutch Golden Age" }))).toEqual([
-      { label: "Type", value: "Paintings" },
-      { label: "Medium", value: "Oil on canvas" },
-      { label: "Date", value: "1650s" },
-      { label: "Artist", value: "Test Artist" },
-      { label: "Culture", value: "Dutch" },
-    ]);
+describe("mediumClue", () => {
+  it("drops ware names and where it was made", () => {
+    expect(
+      mediumClue(
+        "Yue ware: light gray stoneware with celadon glaze over incised decoration. From the Yue kilns at Shanglinhu, Zhejiang province.",
+      ),
+    ).toBe("light gray stoneware with celadon glaze over incised decoration");
   });
 
-  it("skips unknown values and falls back to the century", () => {
-    const hints = buildHints(
-      object({
-        dated: null,
-        culture: "Unidentified culture",
-        people: [{ name: "Unknown Artist", role: "Artist" }],
-        period: "Edo period",
-      }),
-    );
-    expect(hints.map((h) => h.label)).toEqual(["Type", "Medium", "Date", "Period"]);
-    expect(hints[2].value).toBe("17th century");
+  it("leaves plain materials alone", () => {
+    expect(mediumClue("Oil on canvas")).toBe("Oil on canvas");
+    expect(mediumClue("Gelatin silver print.")).toBe("Gelatin silver print");
+    expect(mediumClue(" ")).toBeNull();
+    expect(mediumClue(null)).toBeNull();
   });
 });
 
-describe("buildPuzzle", () => {
-  const objects = [
-    object({ id: 1 }),
-    object({ id: 2, title: "Another Dutch Test" }),
-    object({
-      id: 3,
-      title: "Test Vase",
-      places: [{ displayname: "Asia, Japan, Kyoto", type: "Creation Place" }],
-    }),
-    object({
-      id: 4,
-      title: "Test Print",
-      places: [{ displayname: "Europe, France, Paris", type: "Creation Place" }],
-    }),
-    object({ id: 5, primaryimageurl: null, places: [{ displayname: "Asia, China", type: "Creation Place" }] }),
-    object({ id: 6, places: [{ displayname: "Ancient & Byzantine World, Europe, Chalke", type: "Creation Place" }] }),
-  ];
-
-  it("is deterministic for a seed", () => {
-    expect(buildPuzzle("2026-10-20", objects, 20261020)).toEqual(
-      buildPuzzle("2026-10-20", objects, 20261020),
-    );
-  });
-
-  it("picks evenly among the countries in the sample", () => {
-    const countries = new Set<string>();
-    for (let seed = 20261020; seed < 20261060; seed++) {
-      countries.add(buildPuzzle("2026-10-20", objects, seed)!.answer.country);
-    }
-    expect([...countries].sort()).toEqual(["FR", "JP", "NL"]);
-  });
-
-  it("describes the answer", () => {
-    const puzzle = buildPuzzle("2026-10-20", [objects[0]], 1)!;
-    expect(puzzle.answer).toEqual({
+describe("playableArtworks", () => {
+  it("builds clues and the answer", () => {
+    const [artwork] = playableArtworks([object()]);
+    expect(artwork.clues).toEqual({ date: "1650s", medium: "Oil on canvas" });
+    expect(artwork.answer).toEqual({
       country: "NL",
       place: "Amsterdam, Netherlands",
       title: "Test Object",
@@ -135,21 +100,85 @@ describe("buildPuzzle", () => {
       culture: "Dutch",
       url: "https://harvardartmuseums.org/collections/object/1",
     });
-    expect(puzzle.number).toBe(1);
   });
 
   it("asks the museum's image server for a resized image", () => {
-    expect(buildPuzzle("2026-10-20", [objects[0]], 1)!.imageUrl).toBe(
+    expect(playableArtworks([object()])[0].imageUrl).toBe(
       "https://nrs.harvard.edu/urn-3:HUAM:TEST1?width=1200&height=1200",
     );
   });
 
-  it("returns null when nothing is playable", () => {
-    expect(buildPuzzle("2026-10-20", objects.slice(4), 1)).toBeNull();
+  it("zooms in somewhere near the middle", () => {
+    for (let id = 1; id < 50; id++) {
+      const { focus } = playableArtworks([object({ id })])[0];
+      for (const value of [focus.x, focus.y]) {
+        expect(value).toBeGreaterThanOrEqual(30);
+        expect(value).toBeLessThanOrEqual(70);
+      }
+    }
   });
 
-  it("keeps the answer out of the public puzzle", () => {
-    const publicPuzzle = toPublicPuzzle(buildPuzzle("2026-10-20", objects, 1)!);
-    expect(Object.keys(publicPuzzle).sort()).toEqual(["date", "hints", "imageUrl", "number"]);
+  it("falls back to the century for the date", () => {
+    expect(playableArtworks([object({ dated: null })])[0].clues.date).toBe("17th century");
+  });
+
+  it("skips objects without an image, title or known country", () => {
+    expect(
+      playableArtworks([
+        object({ primaryimageurl: null }),
+        object({ title: " " }),
+        object({ places: [{ displayname: "Ancient & Byzantine World, Europe, Chalke", type: "Creation Place" }] }),
+        object({ people: [{ name: "Unknown Artist", role: "Artist" }] }),
+      ]).map((a) => a.answer.artist),
+    ).toEqual([null]);
+  });
+});
+
+describe("picking artworks", () => {
+  const artworks = playableArtworks([
+    object({ id: 1 }),
+    object({ id: 2, title: "Another Dutch Test" }),
+    object({ id: 3, places: [{ displayname: "Asia, Japan, Kyoto", type: "Creation Place" }] }),
+    object({ id: 4, places: [{ displayname: "Europe, France, Paris", type: "Creation Place" }] }),
+  ]);
+
+  it("picks countries evenly, then an artwork from that country", () => {
+    const countries = new Set<string>();
+    for (let seed = 0; seed < 30; seed++) {
+      countries.add(artworks[pickArtwork(artworks, seed, seed)].answer.country);
+    }
+    expect([...countries].sort()).toEqual(["FR", "JP", "NL"]);
+    // Both Dutch artworks can come up.
+    expect(pickArtwork(artworks, 2, 0)).toBe(0);
+    expect(pickArtwork(artworks, 2, 1)).toBe(1);
+  });
+
+  it("gives the same daily artwork for the same seed", () => {
+    expect(dailyArtwork(artworks, 20261027)).toBe(dailyArtwork(artworks, 20261027));
+  });
+});
+
+describe("round ids", () => {
+  it("round-trips", () => {
+    for (const [pool, index] of [[1, 0], [42, 7], [ROUND_POOLS, 99]]) {
+      expect(parseRoundId(roundId(pool, index))).toEqual({ pool, index });
+    }
+    expect(roundId(2, 34)).toMatch(/^[0-9a-z]+$/);
+  });
+
+  it("rejects ids that aren't rounds", () => {
+    for (const id of ["", "unavailable", "ABC", "1-2", roundId(ROUND_POOLS + 1, 0), "0", 42, null]) {
+      expect(parseRoundId(id)).toBeNull();
+    }
+  });
+});
+
+describe("toPublicPuzzle", () => {
+  it("keeps the answer out", () => {
+    const [artwork] = playableArtworks([object()]);
+    const publicPuzzle = toPublicPuzzle({ kind: "round", id: "abc", number: null, ...artwork });
+    expect(Object.keys(publicPuzzle).sort()).toEqual(
+      ["clues", "focus", "id", "imageUrl", "kind", "number"],
+    );
   });
 });
